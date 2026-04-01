@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id                    String   @id @default(cuid())
+  name                  String
+  slug                  String   @unique
+  sector                String   // 'btp', 'agro', 'sante', 'industrie', 'services'
+  country               String   @default("SN") // 'SN', 'CI', 'BF', 'ML', 'GN'
+  subscriptionTier      String   @default("free") // 'free', 'pro', 'business'
+  subscriptionStatus    String   @default("active")
+  subscriptionExpiresAt DateTime?
+  maxUsers              Int      @default(1)
+  aiCreditsRemaining    Int      @default(0)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  users    User[]
+  actions  Action[]
+  alerts   Alert[]
+  qrCodes  AlertQrCode[]
+  payments Payment[]
+
+  @@map("organizations")
+}
+
+model User {
+  id             String    @id @default(cuid())
+  email          String    @unique
+  name           String?
+  password       String?   // Pour credentials provider
+  role           String    @default("member") // 'owner', 'admin', 'member'
+  phone          String?
+  emailVerified  DateTime?
+  image          String?
+  organizationId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+  accounts     Account[]
+  sessions     Session[]
+  actionsCreated Action[] @relation("CreatedBy")
+  actionsAssigned Action[] @relation("AssignedTo")
+  alertsAssigned Alert[] @relation("AlertAssignedTo")
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model Action {
+  id              String    @id @default(cuid())
+  organizationId  String
+  createdById     String
+  assignedToId    String?
+  
+  title           String
+  description     String?
+  domain          String    // 'quality', 'hygiene', 'safety', 'environment'
+  priority        String    // 'low', 'medium', 'high', 'critical'
+  status          String    @default("todo") // 'todo', 'in_progress', 'completed', 'cancelled'
+  
+  dueDate         DateTime
+  completedAt     DateTime?
+  
+  attachments     Json?     @default("[]")
+  location        Json?     // { lat: number, lng: number, address: string }
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  createdBy    User @relation("CreatedBy", fields: [createdById], references: [id])
+  assignedTo   User? @relation("AssignedTo", fields: [assignedToId], references: [id])
+
+  @@map("actions")
+}
+
+model AlertQrCode {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String   // ex: "Chantier Dakar Port"
+  publicSlug     String   @unique
+  location       String?  // description lieu
+  isActive       Boolean  @default(true)
+  alertCount     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  alerts       Alert[]
+
+  @@map("alert_qr_codes")
+}
+
+model Alert {
+  id             String   @id @default(cuid())
+  organizationId String
+  qrCodeId       String?
+  
+  reporterName   String?
+  reporterPhone  String?
+  
+  title          String
+  description    String
+  alertType      String   // 'safety', 'quality', 'environment', 'maintenance'
+  severity       String   // 'low', 'medium', 'high', 'critical'
+  
+  photos         Json?    @default("[]")
+  status         String   @default("new") // 'new', 'in_progress', 'resolved', 'closed'
+  assignedToId   String?
+  resolvedAt     DateTime?
+  resolutionNotes String?
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+  qrCode       AlertQrCode? @relation(fields: [qrCodeId], references: [id])
+  assignedTo   User? @relation("AlertAssignedTo", fields: [assignedToId], references: [id])
+
+  @@map("alerts")
+}
+
+model Payment {
+  id                   String   @id @default(cuid())
+  organizationId       String
+  monerooTransactionId String?  @unique
+  monerooReference     String?
+  
+  amount               Decimal
+  currency             String   @default("XOF")
+  paymentMethod        String?  // 'wave', 'orange_money', 'mtn_money'
+  
+  planTier             String   // 'pro', 'business'
+  status               String   @default("pending") // 'pending', 'completed', 'failed', 'refunded'
+  
+  paidAt               DateTime?
+  metadata             Json?
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@map("payments")
+}
+
+model AiConversation {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  messages       Json     // [{ role: 'user'|'assistant', content: string, timestamp: string }]
+  tokensUsed     Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  @@map("ai_conversations")
+}

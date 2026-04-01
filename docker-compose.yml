@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mini-qhse-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qhseuser
+      POSTGRES_PASSWORD: qhsepassword
+      POSTGRES_DB: mini_qhse_ia
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - qhse-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mini-qhse-app
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_URL: postgresql://qhseuser:qhsepassword@postgres:5432/mini_qhse_ia?schema=public
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      MONEROO_API_KEY: ${MONEROO_API_KEY}
+      MONEROO_WEBHOOK_SECRET: ${MONEROO_WEBHOOK_SECRET}
+    ports:
+      - "3000:3000"
+    networks:
+      - qhse-network
+    command: sh -c "npx prisma migrate deploy && node server.js"
+
+volumes:
+  postgres_data:
+
+networks:
+  qhse-network:
+    driver: bridge
